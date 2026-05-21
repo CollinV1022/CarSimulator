@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Speed Satellite Simulator</title>
+    <title>Satellite Simulator Clean Borders & Labels</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -25,14 +25,14 @@
         
         <div class="p-4 bg-gray-800/40 border-b border-gray-800/60 flex justify-between items-center cursor-pointer" id="panel-header">
             <h1 class="text-lg font-bold flex items-center gap-2 text-cyan-400">
-                🛰️ Smart Speed Simulator
+                🛰️ Boundary Map Simulator
             </h1>
             <button id="minimize-btn" class="text-gray-400 hover:text-white text-xl font-bold w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-800 transition">
                 −
             </button>
         </div>
         
-        <div id="panel-content" class="p-6 space-y-5 panel-transition max-h-[650px] opacity-100">
+        <div id="panel-content" class="p-6 space-y-5 panel-transition max-h-[750px] opacity-100">
             <div class="space-y-3">
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Start Address</label>
@@ -45,6 +45,14 @@
                 <button id="route-btn" class="w-full bg-cyan-600 hover:bg-cyan-500 transition font-medium text-sm py-2 rounded-lg shadow-lg shadow-cyan-900/20">
                     Calculate Route
                 </button>
+            </div>
+
+            <div class="bg-gray-800/30 border border-gray-800 p-3 rounded-lg space-y-2">
+                <span class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Map Overlays</span>
+                <label class="flex items-center gap-3 cursor-pointer group">
+                    <input id="toggle-labels" type="checkbox" checked class="w-4 h-4 rounded border-gray-700 bg-gray-800 text-cyan-500 focus:ring-cyan-500 accent-cyan-500">
+                    <span class="text-sm text-gray-300 group-hover:text-white transition">Show Borders, Towns, & Road Names</span>
+                </label>
             </div>
 
             <div id="stats-panel" class="hidden border-t border-gray-800 pt-4 space-y-4">
@@ -75,8 +83,8 @@
                     <select id="speed-multiplier" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 text-gray-200">
                         <option value="1">Real-Time (1x)</option>
                         <option value="10">10x Speed</option>
-                        <option value="50" selected>50x Speed (Recommended)</option>
-                        <option value="200">200x Speed</option>
+                        <option value="30" selected>30x Speed (Realistic Cruising)</option>
+                        <option value="100">100x Speed (Fast Motion)</option>
                     </select>
                 </div>
 
@@ -95,14 +103,22 @@
     <script>
         const map = L.map('map', { zoomControl: false }).setView([39.8283, -98.5795], 4);
         
+        // Base Satellite Layer
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: 'Tiles &copy; Esri',
             maxZoom: 19
         }).addTo(map);
 
+        // All-in-One Unified Overlay (Borders + Town Labels + Roads from a single source)
+        const borderLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Labels & Borders &copy; Esri',
+            maxZoom: 19,
+            pane: 'markerPane' 
+        }).addTo(map);
+
         let routeCoordinates = []; 
-        let segmentDurations = []; // Dynamic time weights per coordinate segment
-        let segmentDistances = []; // Meter weights per segment
+        let segmentDurations = []; 
+        let segmentDistances = []; 
         let totalDuration = 0; 
         let carMarker = null;
         let routeLine = null;
@@ -112,13 +128,20 @@
         let simulatedTimeAccumulated = 0; 
         let lastTimestamp = null; 
         let animationFrameId = null;
-        let totalDistance = 0;
-        let cumulativeDistances = [0];
 
         const carIcon = L.divIcon({
-            html: '<div id="car-emoji" style="font-size: 26px; transform-origin: center; filter: drop-shadow(0px 3px 5px rgba(0,0,0,0.6));">🚗</div>',
-            iconSize: [26, 26],
-            iconAnchor: [13, 13]
+            html: '<div id="car-emoji" style="font-size: 28px; transform-origin: center; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.6)); z-index: 9999;">🚗</div>',
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+        });
+
+        // Toggle Logic
+        document.getElementById('toggle-labels').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                map.addLayer(borderLayer);
+            } else {
+                map.removeLayer(borderLayer);
+            }
         });
 
         // UI Panel Toggling
@@ -135,7 +158,7 @@
                 panelContent.style.padding = '0px';
                 minimizeBtn.innerHTML = '＋';
             } else {
-                panelContent.style.maxHeight = '650px';
+                panelContent.style.maxHeight = '750px';
                 panelContent.style.opacity = '1';
                 panelContent.style.padding = '1.5rem';
                 minimizeBtn.innerHTML = '−';
@@ -144,14 +167,13 @@
         minimizeBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleMinimize(); });
         panelHeader.addEventListener('click', toggleMinimize);
 
-        // Fetch Routes with Server Fallback redundancy
+        // Fetch Routes
         document.getElementById('route-btn').addEventListener('click', async () => {
             const startQuery = document.getElementById('start-input').value;
             const endQuery = document.getElementById('end-input').value;
 
             if (!startQuery || !endQuery) return alert('Please enter both locations.');
 
-            // UI feedback loading state
             document.getElementById('route-btn').innerText = "Computing Route...";
             document.getElementById('route-btn').disabled = true;
 
@@ -159,30 +181,26 @@
                 const startCoord = await geocodeAddress(startQuery);
                 const endCoord = await geocodeAddress(endQuery);
 
-                // OSRM Servers endpoints list for absolute backup stability
                 const primaryServer = `https://router.project-osrm.org`;
                 const backupServer = `https://routing.openstreetmap.de`;
                 
                 let data = null;
-                // Append annotations=duration,distance flag to pull precise speed curves from road definitions
                 const apiPath = `/route/v1/driving/${startCoord.lng},${startCoord.lat};${endCoord.lng},${endCoord.lat}?overview=full&geometries=geojson&annotations=duration,distance`;
 
                 try {
                     const response = await fetch(primaryServer + apiPath);
                     data = await response.json();
                 } catch(e) {
-                    // Failover triggered seamlessly on network/rate load drops
                     const response = await fetch(backupServer + apiPath);
                     data = await response.json();
                 }
 
-                if (!data || !data.routes || data.routes.length === 0) throw new Error('No driving paths found between coordinates.');
+                if (!data || !data.routes || data.routes.length === 0) throw new Error('No driving paths found.');
 
                 const route = data.routes[0];
                 routeCoordinates = route.geometry.coordinates.map(coord => L.latLng(coord[1], coord[0]));
                 totalDuration = route.duration; 
 
-                // Pull native roadway timing segments mapped out by openstreet infrastructure
                 segmentDurations = route.legs[0].annotation.duration;
                 segmentDistances = route.legs[0].annotation.distance;
 
@@ -195,28 +213,25 @@
                 document.getElementById('stats-panel').classList.remove('hidden');
 
                 if (routeLine) map.removeLayer(routeLine);
-                routeLine = L.polyline(routeCoordinates, { color: '#06b6d4', weight: 5, opacity: 0.85 }).addTo(map);
+                routeLine = L.polyline(routeCoordinates, { color: '#06b6d4', weight: 6, opacity: 0.8 }).addTo(map);
                 map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
 
                 resetSimulationState();
                 carMarker = L.marker(routeCoordinates[0], { icon: carIcon }).addTo(map);
 
             } catch (err) {
-                alert('Routing Error: ' + err.message + '\nTry clarifying street numbers or adding a state abbreviation.');
+                alert('Routing Error: ' + err.message);
             } finally {
                 document.getElementById('route-btn').innerText = "Calculate Route";
                 document.getElementById('route-btn').disabled = false;
             }
         });
 
-        // High Accuracy Parsing Engine
         async function geocodeAddress(query) {
-            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=us&addressdetails=1&polygon_threshold=0.0`;
-            const response = await fetch(url, { headers: { 'User-Agent': 'DynamicCarSimApp/1.3' } });
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=us&addressdetails=1&limit=1`;
+            const response = await fetch(url, { headers: { 'User-Agent': 'DynamicCarSimApp/1.8' } });
             const data = await response.json();
             if (!data || data.length === 0) throw new Error(`Address not located: "${query}"`);
-            
-            // Loop through results to match specific street layouts if looking for exact address numbers
             return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
         }
 
@@ -245,18 +260,11 @@
             return L.latLng(p1.lat + (p2.lat - p1.lat) * fraction, p1.lng + (p2.lng - p1.lng) * fraction);
         }
 
-        // CONTROL BUTTON INTERFACES
         document.getElementById('start-btn').addEventListener('click', () => {
             if (routeCoordinates.length === 0 || isPlaying) return;
 
             if (simulatedTimeAccumulated === 0) {
-                totalDistance = 0;
-                cumulativeDistances = [0];
-                for (let i = 0; i < routeCoordinates.length - 1; i++) {
-                    totalDistance += routeCoordinates[i].distanceTo(routeCoordinates[i + 1]);
-                    cumulativeDistances.push(totalDistance);
-                }
-                map.setView(routeCoordinates[0], 16);
+                map.setView(routeCoordinates[0], 15);
             }
 
             isPlaying = true;
@@ -275,7 +283,6 @@
             document.getElementById('start-btn').innerText = 'Resume Journey';
         });
 
-        // VELOCITY ANIMATION ENGINE LOOP
         function animateLoop(currentTimestamp) {
             if (!isPlaying) return;
 
@@ -296,7 +303,6 @@
                 return;
             }
 
-            // Map simulated elapsed time directly down to corresponding highway coordinates arrays
             let currentTrackedSimulatedSec = 0;
             let index = 0;
             
@@ -311,26 +317,30 @@
                 return;
             }
 
-            // Read the exact structural velocity mapping of the active road segment
             const currentSegmentSeconds = segmentDurations[index];
             const currentSegmentMeters = segmentDistances[index];
             const timePassedInSegment = simulatedTimeAccumulated - currentTrackedSimulatedSec;
             
             const segmentFraction = currentSegmentSeconds > 0 ? timePassedInSegment / currentSegmentSeconds : 0;
 
-            // Math conversion: Meters per second directly translated to localized MPH values
-            let localMetersPerSec = currentSegmentSeconds > 0 ? currentSegmentMeters / currentSegmentSeconds : 0;
-            let localMilesPerHour = Math.round(localMetersPerSec * 2.23694);
+            let baseMetersPerSec = currentSegmentSeconds > 0 ? currentSegmentMeters / currentSegmentSeconds : 0;
+            let baseMPH = baseMetersPerSec * 2.23694;
 
-            // Interface output update
-            document.getElementById('speedometer').innerText = `${localMilesPerHour} mph`;
+            let clampedMPH = 35; 
+            if (baseMPH > 55) {
+                clampedMPH = 70; 
+            } else if (baseMPH > 38) {
+                clampedMPH = 55; 
+            } else if (baseMPH < 12 && currentSegmentMeters > 3) {
+                clampedMPH = 20; 
+            }
+
+            document.getElementById('speedometer').innerText = `${clampedMPH} mph`;
 
             const currentPosition = interpolatePoints(routeCoordinates[index], routeCoordinates[index + 1], segmentFraction);
-            
             carMarker.setLatLng(currentPosition);
             map.panTo(currentPosition, { animate: false }); 
 
-            // Turn arrow alignment
             const p1 = routeCoordinates[index];
             const p2 = routeCoordinates[index + 1];
             const angle = Math.atan2(p2.lat - p1.lat, p2.lng - p1.lng) * 180 / Math.PI;
